@@ -362,10 +362,12 @@ test('search covers name/id/national id; admin sees closed/pending; agent only o
   assert.match(h.$('.case-card', root).innerHTML, /&lt;img/);
 });
 
-test('citizen reload renders two default tiles but does not connect or capture', async () => {
+test('citizen reload renders one remote tile but does not connect or capture', async () => {
   const h = await harness({ me: { case: caseItem('c') } });
   assert.equal(h.controllers.length, 0);
-  assert.equal(h.$('[data-slot="videoGrid"]', h.app.state.callRoot).children.length, 2);
+  assert.equal(h.$('[data-slot="videoGrid"]', h.app.state.callRoot).children.length, 1);
+  assert.equal(h.$('[data-slot="remotePlaceholder"]', h.app.state.callRoot).hidden, false);
+  assert.equal(h.$('[data-slot="localLabel"]', h.app.state.callRoot), null);
   assert.equal(h.$('[data-slot="recordingNotice"]', h.app.state.callRoot).textContent, '錄影尚未啟用');
   await h.$('[data-action="joinCall"]', h.app.state.callRoot).fire('click'); await h.flush();
   assert.equal(h.controllers[0].tracks.size, 2);
@@ -610,16 +612,16 @@ for (const reconnecting of [false, true]) {
 }
 
 for (const kinds of [[], ['video'], ['audio'], ['video', 'audio']]) {
-  test(`local label reflects ${kinds.join('+') || 'no tracks'} before, during and after SDK recovery`, async () => {
+  test(`local controls reflect ${kinds.join('+') || 'no tracks'} without showing self view before, during and after SDK recovery`, async () => {
     const sdk = mediaSDK(), a = caseItem('a'), h = await harness({ sdk: sdk.sdk, cases: [a] });
     await h.app.selectCase(await h.staff(), a);
     await h.joinSelected();
     const session = h.controllers[0], root = h.app.state.callRoot;
     for (const kind of kinds) await session.setDevice(kind, true);
     const tracks = [...session.tracks.values()];
-    const expected = `我方（鏡頭${kinds.includes('video') ? '已開啟' : '未開啟'}／麥克風${kinds.includes('audio') ? '已開啟' : '未開啟'}）`;
     const check = () => {
-      assert.equal(h.$('[data-slot="localLabel"]', root).textContent, expected);
+      assert.equal(h.$('[data-slot="localLabel"]', root), null);
+      assert.equal(h.$('[data-slot="videoGrid"]', root).children.filter((child) => !child.hidden).length, 1);
       for (const [kind, action] of [['video', 'toggleVideo'], ['audio', 'toggleAudio']]) {
         assert.equal(h.$(`[data-action="${action}"]`, root).getAttribute('aria-pressed'), String(kinds.includes(kind)));
       }
@@ -630,7 +632,7 @@ for (const kinds of [[], ['video'], ['audio'], ['video', 'audio']]) {
     assert.match(h.$('[data-slot="callStatus"]', root).textContent, /重新連線/);
     await sdk.clients[0].emit('connection-state-change', 'CONNECTED', 'RECONNECTING'); check();
     await session.disconnect();
-    assert.equal(h.$('[data-slot="localLabel"]', root).textContent, '我方（鏡頭未開啟／麥克風未開啟）');
+    assert.equal(h.$('[data-slot="localLabel"]', root), null);
   });
 }
 

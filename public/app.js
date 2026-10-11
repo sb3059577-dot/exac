@@ -406,10 +406,10 @@ function renderMedia(root, caseItem) {
   const staff = Boolean(state.me?.user);
   root.innerHTML = `<div class="section-heading"><h2>視訊筆錄</h2></div>
     <div class="media-grid"><div class="media-controls">
-      <div data-slot="videoGrid" class="video-grid video-pair">
-        <div class="video-tile"><div data-slot="localVideoSlot" class="video-slot"><div data-slot="localPlayer" class="video-player"></div></div><div data-slot="localLabel" class="video-label">我方（未開啟鏡頭／麥克風）</div></div>
+      <div data-slot="videoGrid" class="video-grid video-single">
         <div data-slot="remotePlaceholder" class="video-tile"><div class="video-slot video-placeholder"><p>${staff ? '等待民眾傳送視訊' : '視訊報案鏡頭啟動中'}</p></div><div class="video-label">對方（尚未傳送）</div></div>
       </div>
+      <div class="local-media-mount" aria-hidden="true"><div data-slot="localVideoSlot"><div data-slot="localPlayer"></div></div></div>
       <p data-slot="callStatus" class="call-status" role="status" aria-live="polite"></p>
       <p data-slot="recordingNotice" class="recording-notice">錄影尚未啟用</p>
       <p class="muted">本頁不會自動錄影；錄影功能須另行確認並取得明確同意後才可啟用。</p>

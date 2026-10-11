@@ -8,3 +8,9 @@ uploads/
 *.db
 *.db-shm
 *.db-wal
+CursorUserSetup-*.exe
+export_*.doc
+export_*.xls
+export_*.xlsx
+export_*.json
+export_*.xml
