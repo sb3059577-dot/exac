@@ -404,12 +404,18 @@ function renderMedia(root, caseItem) {
   state.callRoot = root;
   root.dataset.caseId = String(caseItem.id);
   const staff = Boolean(state.me?.user);
+  const videoMarkup = staff
+    ? `<div data-slot="videoGrid" class="video-grid video-single">
+        <div data-slot="remotePlaceholder" class="video-tile"><div class="video-slot video-placeholder"><p>等待民眾傳送視訊</p></div><div class="video-label">對方（尚未傳送）</div></div>
+      </div>
+      <div class="local-media-mount" aria-hidden="true"><div data-slot="localVideoSlot"><div data-slot="localPlayer"></div></div></div>`
+    : `<div data-slot="videoGrid" class="video-grid video-single video-local-only">
+        <div data-slot="localTile" class="video-tile"><div data-slot="localVideoSlot" class="video-slot"><div data-slot="localPlayer" class="video-player"></div></div><div data-slot="localLabel" class="video-label">我的報案畫面（鏡頭未開啟／麥克風未開啟）</div></div>
+      </div>
+      <div data-slot="remotePlaceholder" class="local-media-mount" aria-hidden="true" hidden></div>`;
   root.innerHTML = `<div class="section-heading"><h2>視訊筆錄</h2></div>
     <div class="media-grid"><div class="media-controls">
-      <div data-slot="videoGrid" class="video-grid video-single">
-        <div data-slot="remotePlaceholder" class="video-tile"><div class="video-slot video-placeholder"><p>${staff ? '等待民眾傳送視訊' : '視訊報案鏡頭啟動中'}</p></div><div class="video-label">對方（尚未傳送）</div></div>
-      </div>
-      <div class="local-media-mount" aria-hidden="true"><div data-slot="localVideoSlot"><div data-slot="localPlayer"></div></div></div>
+      ${videoMarkup}
       <p data-slot="callStatus" class="call-status" role="status" aria-live="polite"></p>
       <p data-slot="recordingNotice" class="recording-notice">錄影尚未啟用</p>
       <p class="muted">本頁不會自動錄影；錄影功能須另行確認並取得明確同意後才可啟用。</p>
@@ -449,6 +455,7 @@ function renderMedia(root, caseItem) {
 function renderMediaState() {
   const root = state.callRoot;
   if (!isCurrentRoot(state.currentCase?.id, root)) return;
+  const staff = Boolean(state.me?.user);
   const session = state.videoSession;
   const same = session?.caseId === state.currentCase.id;
   const connected = Boolean(same && session.connected);
@@ -465,7 +472,9 @@ function renderMediaState() {
     same && session.status === 'reconnecting' ? '網路暫時中斷，正在重新連線…' :
     same && session.status === 'connecting' ? '視訊連線中…' :
     error ? (connected ? '連線仍在，部分功能發生錯誤；請查看下方說明。' : '視訊連線失敗，請重試。') :
-    connected ? (placeholder?.hidden ? '已連線，正在接收對方視訊／語音。' : '已連線，等待對方視訊／語音。') : '尚未連線。';
+    connected ? (staff
+      ? (placeholder?.hidden ? '已連線，正在接收對方視訊／語音。' : '已連線，等待對方視訊／語音。')
+      : '已連線，正在顯示並傳送我的報案視訊／語音。') : '尚未連線。';
   const recording = $('[data-slot="recordingNotice"]', root);
   if (recording) recording.textContent = connected ? '視訊筆錄進行中｜錄影尚未啟用' : '錄影尚未啟用';
   const errorNode = $('[data-slot="mediaError"]', root);
@@ -484,7 +493,7 @@ function renderMediaState() {
   const audio = $('[data-action="resumeAudio"]', root);
   if (audio) { audio.disabled = !connected; audio.textContent = session?.audioBlocked ? '播放聲音（瀏覽器已阻擋）' : '播放聲音'; }
   const label = $('[data-slot="localLabel"]', root);
-  if (label) label.textContent = `我方（鏡頭${same && session.tracks.has('video') ? '已開啟' : '未開啟'}／麥克風${same && session.tracks.has('audio') ? '已開啟' : '未開啟'}）`;
+  if (label) label.textContent = `我的報案畫面（鏡頭${same && session.tracks.has('video') ? '已開啟' : '未開啟'}／麥克風${same && session.tracks.has('audio') ? '已開啟' : '未開啟'}）`;
 }
 
 function runMediaAction(caseId, root, operation) {

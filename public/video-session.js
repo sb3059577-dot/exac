@@ -459,8 +459,8 @@
       this.root.querySelector('[data-slot="remotePlaceholder"]').hidden = session.remotes.size > 0;
       const localLabel = this.root.querySelector('[data-slot="localLabel"]') ||
         this._localPlayer()?.closest('.video-tile')?.querySelector('.video-label');
-      if (localLabel) localLabel.textContent = this.tracks.has('video') ? '我方' :
-        this.tracks.has('audio') ? '我方（僅語音）' : '我方（未開啟鏡頭／麥克風）';
+      if (localLabel) localLabel.textContent = this.tracks.has('video') ? '我的報案畫面' :
+        this.tracks.has('audio') ? '我的報案畫面（僅語音）' : '我的報案畫面（未開啟鏡頭／麥克風）';
     }
 
     _playVideo(session, track, element, valid = () => this._active(session)) {

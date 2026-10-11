@@ -362,15 +362,17 @@ test('search covers name/id/national id; admin sees closed/pending; agent only o
   assert.match(h.$('.case-card', root).innerHTML, /&lt;img/);
 });
 
-test('citizen reload renders one remote tile but does not connect or capture', async () => {
+test('citizen reload renders one self-view tile but does not connect or capture', async () => {
   const h = await harness({ me: { case: caseItem('c') } });
   assert.equal(h.controllers.length, 0);
   assert.equal(h.$('[data-slot="videoGrid"]', h.app.state.callRoot).children.length, 1);
-  assert.equal(h.$('[data-slot="remotePlaceholder"]', h.app.state.callRoot).hidden, false);
-  assert.equal(h.$('[data-slot="localLabel"]', h.app.state.callRoot), null);
+  assert.equal(h.$('[data-slot="remotePlaceholder"]', h.app.state.callRoot).hidden, true);
+  assert.match(h.$('[data-slot="localLabel"]', h.app.state.callRoot).textContent, /我的報案畫面/);
   assert.equal(h.$('[data-slot="recordingNotice"]', h.app.state.callRoot).textContent, '錄影尚未啟用');
   await h.$('[data-action="joinCall"]', h.app.state.callRoot).fire('click'); await h.flush();
   assert.equal(h.controllers[0].tracks.size, 2);
+  assert.match(h.$('[data-slot="localLabel"]', h.app.state.callRoot).textContent, /鏡頭已開啟.*麥克風已開啟/);
+  assert.match(h.$('[data-slot="callStatus"]', h.app.state.callRoot).textContent, /顯示並傳送我的報案視訊/);
   assert.equal(h.$('[data-action="leaveCall"]', h.app.state.callRoot), null);
   assert.equal(h.app.state.currentCase.interviewStatus, 'active');
 });
@@ -612,7 +614,7 @@ for (const reconnecting of [false, true]) {
 }
 
 for (const kinds of [[], ['video'], ['audio'], ['video', 'audio']]) {
-  test(`local controls reflect ${kinds.join('+') || 'no tracks'} without showing self view before, during and after SDK recovery`, async () => {
+  test(`staff local controls reflect ${kinds.join('+') || 'no tracks'} without showing self view before, during and after SDK recovery`, async () => {
     const sdk = mediaSDK(), a = caseItem('a'), h = await harness({ sdk: sdk.sdk, cases: [a] });
     await h.app.selectCase(await h.staff(), a);
     await h.joinSelected();
