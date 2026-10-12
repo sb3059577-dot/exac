@@ -1,9 +1,27 @@
-const { getJsonBody, getSupabase, json, methodNotAllowed, publicCase, requireStaff, serviceErrorMessage } = require('../_lib/service');
+const { getJsonBody, getSupabase, json, methodNotAllowed, publicCase, requireAdmin, requireStaff, serviceErrorMessage } = require('../_lib/service');
 
 module.exports = async function handler(req, res) {
-  if (!['GET', 'POST'].includes(req.method)) return methodNotAllowed(res, ['GET', 'POST']);
+  if (!['GET', 'POST', 'DELETE'].includes(req.method)) return methodNotAllowed(res, ['GET', 'POST', 'DELETE']);
   try {
     const client = getSupabase();
+
+    if (req.method === 'DELETE') {
+      const session = requireAdmin(req, res);
+      if (!session) return;
+      const body = await getJsonBody(req);
+      const id = String(body.id || '').trim();
+      if (id) {
+        const deleted = await client.from('service_cases').delete().eq('id', id);
+        if (deleted.error) throw deleted.error;
+        return json(res, 200, { ok: true, deleted: 1 });
+      }
+      const citizenName = String(body.citizenName || '').trim();
+      const nationalId = String(body.nationalId || '').trim().toUpperCase();
+      if (citizenName.length < 2 || nationalId.length < 6) return json(res, 400, { error: '請提供要刪除案件的姓名與身分證/居留證號' });
+      const deleted = await client.from('service_cases').delete().eq('citizen_name', citizenName).eq('national_id', nationalId).select('id');
+      if (deleted.error) throw deleted.error;
+      return json(res, 200, { ok: true, deleted: (deleted.data || []).length });
+    }
 
     if (req.method === 'POST') {
       const session = requireStaff(req, res);

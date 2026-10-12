@@ -174,17 +174,66 @@ function renderCaseList(root, cases, isAdmin) {
   visible.forEach((caseItem) => {
     const card = document.createElement('article');
     card.className = `case-card ${state.currentCase?.id === caseItem.id ? 'active' : ''}`;
+    const deleteButton = isAdmin ? '<button type="button" class="case-add-button warning" data-action="deleteCase">刪除此案</button><button type="button" class="case-add-button warning" data-action="deleteCitizenCases">刪除此人案件</button>' : '';
     card.innerHTML = `<button type="button" class="case-card-main" aria-pressed="${state.currentCase?.id === caseItem.id}">
         <span class="case-name-row"><strong>${escapeHtml(caseItem.citizenName)}</strong><span class="case-add-spacer"></span></span>
         <div class="meta"><span class="status ${statusClass(caseItem)}">${caseStatus(caseItem)}</span> · ${escapeHtml(formatTime(caseItem.createdAt))}</div>
         <div class="meta">${escapeHtml(caseItem.id)}</div>
       </button>
-      <button type="button" class="case-add-button" data-action="createRelatedCase">＋新增案件</button>`;
+      <button type="button" class="case-add-button" data-action="createRelatedCase">＋新增案件</button>
+      ${deleteButton}`;
     $('.case-card-main', card).addEventListener('click', () => selectCase(root, caseItem, isAdmin).catch((error) => reportActionError(error, root)));
     $('[data-action="createRelatedCase"]', card).addEventListener('click', () => renderCreateRelatedCase(root, caseItem, isAdmin));
+    $('[data-action="deleteCase"]', card)?.addEventListener('click', () => deleteCase(root, caseItem).catch((error) => reportActionError(error, root)));
+    $('[data-action="deleteCitizenCases"]', card)?.addEventListener('click', () => deleteCitizenCases(root, caseItem).catch((error) => reportActionError(error, root)));
     list.appendChild(card);
   });
   list.scrollTop = scrollTop;
+}
+
+async function deleteCase(root, caseItem) {
+  if (!state.me?.user || state.me.user.role !== 'admin') throw new Error('需要管理員權限');
+  if (!window.confirm(`確定刪除 ${caseItem.citizenName || '此案件'} 的案件？刪除後無法復原。`)) return;
+  await enqueueWorkflow(async () => {
+    if (state.currentCase?.id === caseItem.id) await disconnectCurrent();
+    await api('/api/cases', { method: 'DELETE', body: JSON.stringify({ id: caseItem.id }) });
+  });
+  state.caseRevision += 1;
+  state.cases = state.cases.filter((item) => item.id !== caseItem.id);
+  if (state.currentCase?.id === caseItem.id) {
+    state.currentCase = null;
+    state.conversation = null;
+    for (const slot of ['caseSummary', 'conversation', 'media']) {
+      const node = $(`[data-slot="${slot}"]`, root);
+      if (node) { node.replaceChildren(); node.classList.add('hidden'); }
+    }
+  }
+  renderAllCaseLists();
+}
+
+async function deleteCitizenCases(root, caseItem) {
+  if (!state.me?.user || state.me.user.role !== 'admin') throw new Error('需要管理員權限');
+  const citizenName = caseItem.citizenName || '';
+  const nationalId = caseItem.nationalId || caseItem.agoraChannel || '';
+  if (!citizenName || !nationalId) throw new Error('缺少民眾姓名或身分證/居留證號，無法批次刪除。');
+  if (!window.confirm(`確定刪除 ${citizenName} 名下所有案件？刪除後無法復原。`)) return;
+  await enqueueWorkflow(async () => {
+    const removingCurrent = state.currentCase && state.currentCase.citizenName === citizenName &&
+      (state.currentCase.nationalId || state.currentCase.agoraChannel) === nationalId;
+    if (removingCurrent) await disconnectCurrent();
+    await api('/api/cases', { method: 'DELETE', body: JSON.stringify({ citizenName, nationalId }) });
+  });
+  state.caseRevision += 1;
+  state.cases = state.cases.filter((item) => item.citizenName !== citizenName || (item.nationalId || item.agoraChannel) !== nationalId);
+  if (state.currentCase && state.currentCase.citizenName === citizenName && (state.currentCase.nationalId || state.currentCase.agoraChannel) === nationalId) {
+    state.currentCase = null;
+    state.conversation = null;
+    for (const slot of ['caseSummary', 'conversation', 'media']) {
+      const node = $(`[data-slot="${slot}"]`, root);
+      if (node) { node.replaceChildren(); node.classList.add('hidden'); }
+    }
+  }
+  renderAllCaseLists();
 }
 
 function renderCreateRelatedCase(root, sourceCase, isAdmin = false) {
@@ -863,9 +912,26 @@ async function renderUserList() {
   users.forEach((user) => {
     const row = document.createElement('div');
     row.className = 'user-row';
-    row.innerHTML = `<strong>${escapeHtml(user.displayName)}</strong><div class="muted">${escapeHtml(user.username)} · ${escapeHtml(user.role)}</div>`;
+    const canDelete = user.id && user.id !== state.me?.user?.id;
+    row.innerHTML = `<strong>${escapeHtml(user.displayName)}</strong><div class="muted">${escapeHtml(user.username)} · ${escapeHtml(user.role)}</div>
+      <button type="button" data-action="deleteUser" class="secondary warning" ${canDelete ? '' : 'disabled'}>刪除帳號</button>`;
+    $('[data-action="deleteUser"]', row)?.addEventListener('click', () => deleteUser(user, row).catch((error) => reportActionError(error, row)));
     list.appendChild(row);
   });
+}
+
+async function deleteUser(user, row) {
+  if (!user?.id) throw new Error('缺少帳號編號');
+  if (!window.confirm(`確定刪除帳號 ${user.displayName || user.username}？`)) return;
+  const button = $('[data-action="deleteUser"]', row);
+  if (button) button.disabled = true;
+  try {
+    await api('/api/users', { method: 'DELETE', body: JSON.stringify({ id: user.id }) });
+    await renderUserList();
+  } catch (error) {
+    if (button) button.disabled = false;
+    throw error;
+  }
 }
 
 async function enterCitizen(form) {

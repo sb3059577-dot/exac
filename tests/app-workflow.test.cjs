@@ -558,6 +558,49 @@ test('admin preapproval and account creation survive refresh, show failures inli
   assert.equal(user.elements.namedItem('password').value, '');
 });
 
+test('admin can delete cases and user accounts from backend tools', async () => {
+  const a = caseItem('delete-me'), h = await harness({ cases: [a] });
+  const root = await h.staff(true);
+  let users = [{ id: 'agent-1', username: 'agent', role: 'agent', displayName: '客服一' }];
+  h.route = (url, init, fallback) => {
+    if (url === '/api/cases' && init.method === 'DELETE') {
+      assert.equal(JSON.parse(init.body).id, 'delete-me');
+      return { ok: true };
+    }
+    if (url === '/api/users' && init.method === 'DELETE') {
+      assert.equal(JSON.parse(init.body).id, 'agent-1');
+      users = [];
+      return { ok: true };
+    }
+    if (url === '/api/users') return { users };
+    return fallback(url, init);
+  };
+  await h.app.loadCases(); await h.flush();
+  await h.$('[data-action="deleteCase"]', root).fire('click'); await h.flush();
+  assert.equal(h.app.state.cases.some((item) => item.id === 'delete-me'), false);
+  assert.ok(h.requests.some((request) => request.url === '/api/cases' && request.method === 'DELETE'));
+  assert.match(h.$('#userList', root).textContent, /客服一/);
+  await h.$('[data-action="deleteUser"]', root).fire('click'); await h.flush();
+  assert.equal(h.$('#userList', root).textContent.includes('客服一'), false);
+  assert.ok(h.requests.some((request) => request.url === '/api/users' && request.method === 'DELETE'));
+});
+
+test('admin can delete all cases for the same citizen', async () => {
+  const a = caseItem('one'), b = { ...caseItem('two'), citizenName: '同一民眾', agoraChannel: 'SAME-ID' }, c = { ...caseItem('three'), citizenName: '同一民眾', agoraChannel: 'SAME-ID' };
+  const h = await harness({ cases: [a, b, c] }), root = await h.staff(true);
+  h.route = (url, init, fallback) => {
+    if (url === '/api/cases' && init.method === 'DELETE') {
+      assert.deepEqual(JSON.parse(init.body), { citizenName: '同一民眾', nationalId: 'SAME-ID' });
+      return { ok: true, deleted: 2 };
+    }
+    return fallback(url, init);
+  };
+  const targetCard = h.$('[data-slot="caseList"]', root).children.find((node) => node.textContent.includes('同一民眾'));
+  const target = h.$('[data-action="deleteCitizenCases"]', targetCard);
+  await target.fire('click'); await h.flush();
+  assert.deepEqual(h.app.state.cases.map((item) => item.id), ['one']);
+});
+
 for (const role of ['staff', 'citizen']) {
   for (const reconnecting of [false, true]) {
     for (const kind of ['video', 'audio']) {
