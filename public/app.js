@@ -144,7 +144,7 @@ function statusClass(caseItem) {
 function filterCaseItems(cases, isAdmin, search = '', filter = 'all') {
   const term = search.trim().toLocaleLowerCase();
   return cases.filter((item) => (isAdmin || item.status === 'open') &&
-    (!term || [item.citizenName, item.id, item.nationalId, item.agoraChannel]
+    (!term || [item.citizenName, item.id, item.nationalId, item.agoraChannel, displayCaseNumber(item)]
       .some((value) => String(value || '').toLocaleLowerCase().includes(term))) &&
     (filter === 'all' || (filter === 'active' ? item.status === 'open' && item.interviewStatus === 'active' : item.status === filter)));
 }
@@ -174,66 +174,17 @@ function renderCaseList(root, cases, isAdmin) {
   visible.forEach((caseItem) => {
     const card = document.createElement('article');
     card.className = `case-card ${state.currentCase?.id === caseItem.id ? 'active' : ''}`;
-    const deleteButton = isAdmin ? '<button type="button" class="case-add-button warning" data-action="deleteCase">刪除此案</button><button type="button" class="case-add-button warning" data-action="deleteCitizenCases">刪除此人案件</button>' : '';
     card.innerHTML = `<button type="button" class="case-card-main" aria-pressed="${state.currentCase?.id === caseItem.id}">
         <span class="case-name-row"><strong>${escapeHtml(caseItem.citizenName)}</strong><span class="case-add-spacer"></span></span>
         <div class="meta"><span class="status ${statusClass(caseItem)}">${caseStatus(caseItem)}</span> · ${escapeHtml(formatTime(caseItem.createdAt))}</div>
-        <div class="meta">${escapeHtml(caseItem.id)}</div>
+        <div class="meta case-number">${escapeHtml(displayCaseNumber(caseItem))}</div>
       </button>
-      <button type="button" class="case-add-button" data-action="createRelatedCase">＋新增案件</button>
-      ${deleteButton}`;
+      <button type="button" class="case-add-button" data-action="createRelatedCase">＋新增案件</button>`;
     $('.case-card-main', card).addEventListener('click', () => selectCase(root, caseItem, isAdmin).catch((error) => reportActionError(error, root)));
     $('[data-action="createRelatedCase"]', card).addEventListener('click', () => renderCreateRelatedCase(root, caseItem, isAdmin));
-    $('[data-action="deleteCase"]', card)?.addEventListener('click', () => deleteCase(root, caseItem).catch((error) => reportActionError(error, root)));
-    $('[data-action="deleteCitizenCases"]', card)?.addEventListener('click', () => deleteCitizenCases(root, caseItem).catch((error) => reportActionError(error, root)));
     list.appendChild(card);
   });
   list.scrollTop = scrollTop;
-}
-
-async function deleteCase(root, caseItem) {
-  if (!state.me?.user || state.me.user.role !== 'admin') throw new Error('需要管理員權限');
-  if (!window.confirm(`確定刪除 ${caseItem.citizenName || '此案件'} 的案件？刪除後無法復原。`)) return;
-  await enqueueWorkflow(async () => {
-    if (state.currentCase?.id === caseItem.id) await disconnectCurrent();
-    await api('/api/cases', { method: 'DELETE', body: JSON.stringify({ id: caseItem.id }) });
-  });
-  state.caseRevision += 1;
-  state.cases = state.cases.filter((item) => item.id !== caseItem.id);
-  if (state.currentCase?.id === caseItem.id) {
-    state.currentCase = null;
-    state.conversation = null;
-    for (const slot of ['caseSummary', 'conversation', 'media']) {
-      const node = $(`[data-slot="${slot}"]`, root);
-      if (node) { node.replaceChildren(); node.classList.add('hidden'); }
-    }
-  }
-  renderAllCaseLists();
-}
-
-async function deleteCitizenCases(root, caseItem) {
-  if (!state.me?.user || state.me.user.role !== 'admin') throw new Error('需要管理員權限');
-  const citizenName = caseItem.citizenName || '';
-  const nationalId = caseItem.nationalId || caseItem.agoraChannel || '';
-  if (!citizenName || !nationalId) throw new Error('缺少民眾姓名或身分證/居留證號，無法批次刪除。');
-  if (!window.confirm(`確定刪除 ${citizenName} 名下所有案件？刪除後無法復原。`)) return;
-  await enqueueWorkflow(async () => {
-    const removingCurrent = state.currentCase && state.currentCase.citizenName === citizenName &&
-      (state.currentCase.nationalId || state.currentCase.agoraChannel) === nationalId;
-    if (removingCurrent) await disconnectCurrent();
-    await api('/api/cases', { method: 'DELETE', body: JSON.stringify({ citizenName, nationalId }) });
-  });
-  state.caseRevision += 1;
-  state.cases = state.cases.filter((item) => item.citizenName !== citizenName || (item.nationalId || item.agoraChannel) !== nationalId);
-  if (state.currentCase && state.currentCase.citizenName === citizenName && (state.currentCase.nationalId || state.currentCase.agoraChannel) === nationalId) {
-    state.currentCase = null;
-    state.conversation = null;
-    for (const slot of ['caseSummary', 'conversation', 'media']) {
-      const node = $(`[data-slot="${slot}"]`, root);
-      if (node) { node.replaceChildren(); node.classList.add('hidden'); }
-    }
-  }
-  renderAllCaseLists();
 }
 
 function renderCreateRelatedCase(root, sourceCase, isAdmin = false) {
@@ -453,18 +404,12 @@ function renderMedia(root, caseItem) {
   state.callRoot = root;
   root.dataset.caseId = String(caseItem.id);
   const staff = Boolean(state.me?.user);
-  const videoMarkup = staff
-    ? `<div data-slot="videoGrid" class="video-grid video-single">
-        <div data-slot="remotePlaceholder" class="video-tile"><div class="video-slot video-placeholder"><p>等待民眾傳送視訊</p></div><div class="video-label">對方（尚未傳送）</div></div>
-      </div>
-      <div class="local-media-mount" aria-hidden="true"><div data-slot="localVideoSlot"><div data-slot="localPlayer"></div></div></div>`
-    : `<div data-slot="videoGrid" class="video-grid video-single video-local-only">
-        <div data-slot="localTile" class="video-tile"><div data-slot="localVideoSlot" class="video-slot"><div data-slot="localPlayer" class="video-player"></div></div><div data-slot="localLabel" class="video-label">我的報案畫面（鏡頭未開啟／麥克風未開啟）</div></div>
-      </div>
-      <div data-slot="remotePlaceholder" class="local-media-mount" aria-hidden="true" hidden></div>`;
   root.innerHTML = `<div class="section-heading"><h2>視訊筆錄</h2></div>
     <div class="media-grid"><div class="media-controls">
-      ${videoMarkup}
+      <div data-slot="videoGrid" class="video-grid video-pair">
+        <div class="video-tile"><div data-slot="localVideoSlot" class="video-slot"><div data-slot="localPlayer" class="video-player"></div></div><div data-slot="localLabel" class="video-label">我方（未開啟鏡頭／麥克風）</div></div>
+        <div data-slot="remotePlaceholder" class="video-tile"><div class="video-slot video-placeholder"><p>${staff ? '等待民眾傳送視訊' : '視訊報案鏡頭啟動中'}</p></div><div class="video-label">對方（尚未傳送）</div></div>
+      </div>
       <p data-slot="callStatus" class="call-status" role="status" aria-live="polite"></p>
       <p data-slot="recordingNotice" class="recording-notice">錄影尚未啟用</p>
       <p class="muted">本頁不會自動錄影；錄影功能須另行確認並取得明確同意後才可啟用。</p>
@@ -504,7 +449,6 @@ function renderMedia(root, caseItem) {
 function renderMediaState() {
   const root = state.callRoot;
   if (!isCurrentRoot(state.currentCase?.id, root)) return;
-  const staff = Boolean(state.me?.user);
   const session = state.videoSession;
   const same = session?.caseId === state.currentCase.id;
   const connected = Boolean(same && session.connected);
@@ -521,9 +465,7 @@ function renderMediaState() {
     same && session.status === 'reconnecting' ? '網路暫時中斷，正在重新連線…' :
     same && session.status === 'connecting' ? '視訊連線中…' :
     error ? (connected ? '連線仍在，部分功能發生錯誤；請查看下方說明。' : '視訊連線失敗，請重試。') :
-    connected ? (staff
-      ? (placeholder?.hidden ? '已連線，正在接收對方視訊／語音。' : '已連線，等待對方視訊／語音。')
-      : '已連線，正在顯示並傳送我的報案視訊／語音。') : '尚未連線。';
+    connected ? (placeholder?.hidden ? '已連線，正在接收對方視訊／語音。' : '已連線，等待對方視訊／語音。') : '尚未連線。';
   const recording = $('[data-slot="recordingNotice"]', root);
   if (recording) recording.textContent = connected ? '視訊筆錄進行中｜錄影尚未啟用' : '錄影尚未啟用';
   const errorNode = $('[data-slot="mediaError"]', root);
@@ -542,7 +484,7 @@ function renderMediaState() {
   const audio = $('[data-action="resumeAudio"]', root);
   if (audio) { audio.disabled = !connected; audio.textContent = session?.audioBlocked ? '播放聲音（瀏覽器已阻擋）' : '播放聲音'; }
   const label = $('[data-slot="localLabel"]', root);
-  if (label) label.textContent = `我的報案畫面（鏡頭${same && session.tracks.has('video') ? '已開啟' : '未開啟'}／麥克風${same && session.tracks.has('audio') ? '已開啟' : '未開啟'}）`;
+  if (label) label.textContent = `我方（鏡頭${same && session.tracks.has('video') ? '已開啟' : '未開啟'}／麥克風${same && session.tracks.has('audio') ? '已開啟' : '未開啟'}）`;
 }
 
 function runMediaAction(caseId, root, operation) {
@@ -912,26 +854,9 @@ async function renderUserList() {
   users.forEach((user) => {
     const row = document.createElement('div');
     row.className = 'user-row';
-    const canDelete = user.id && user.id !== state.me?.user?.id;
-    row.innerHTML = `<strong>${escapeHtml(user.displayName)}</strong><div class="muted">${escapeHtml(user.username)} · ${escapeHtml(user.role)}</div>
-      <button type="button" data-action="deleteUser" class="secondary warning" ${canDelete ? '' : 'disabled'}>刪除帳號</button>`;
-    $('[data-action="deleteUser"]', row)?.addEventListener('click', () => deleteUser(user, row).catch((error) => reportActionError(error, row)));
+    row.innerHTML = `<strong>${escapeHtml(user.displayName)}</strong><div class="muted">${escapeHtml(user.username)} · ${escapeHtml(user.role)}</div>`;
     list.appendChild(row);
   });
-}
-
-async function deleteUser(user, row) {
-  if (!user?.id) throw new Error('缺少帳號編號');
-  if (!window.confirm(`確定刪除帳號 ${user.displayName || user.username}？`)) return;
-  const button = $('[data-action="deleteUser"]', row);
-  if (button) button.disabled = true;
-  try {
-    await api('/api/users', { method: 'DELETE', body: JSON.stringify({ id: user.id }) });
-    await renderUserList();
-  } catch (error) {
-    if (button) button.disabled = false;
-    throw error;
-  }
 }
 
 async function enterCitizen(form) {
